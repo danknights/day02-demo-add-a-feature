@@ -25,11 +25,21 @@ def move_tile(board, index, size):
     blank_index = board.index(blank)
     blank_row, blank_col = divmod(blank_index, size)
     row, col = divmod(index, size)
-    if abs(blank_row - row) + abs(blank_col - col) != 1:
+    if blank_row != row and blank_col != col:
         return None
 
     moved_board = board.copy()
-    moved_board[blank_index], moved_board[index] = moved_board[index], blank
+    row_step = (blank_row > row) - (blank_row < row)
+    col_step = (blank_col > col) - (blank_col < col)
+    current_row, current_col = blank_row, blank_col
+    while (current_row, current_col) != (row, col):
+        previous_row = current_row - row_step
+        previous_col = current_col - col_step
+        current_index = current_row * size + current_col
+        previous_index = previous_row * size + previous_col
+        moved_board[current_index] = board[previous_index]
+        current_row, current_col = previous_row, previous_col
+    moved_board[index] = blank
     return moved_board
 
 

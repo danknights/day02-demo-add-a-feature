@@ -67,12 +67,12 @@ def fresh_game():
     st.session_state.t0 = None
     st.session_state.won = False
     st.session_state.final_time = None
-    st.session_state.anim = None       # (value, dx, dy, tick) for the tile that slid
+    st.session_state.anim = None       # ([(value, dx, dy), ...], tick) for shifted tiles
     st.session_state.score_saved = False
     st.session_state.saved_kind = None
 
 def slide(idx):
-    """Click handler: move an adjacent tile into the blank."""
+    """Click handler: push an aligned tile and the intervening tiles into the blank."""
     board = st.session_state.board
     puzzle_size = st.session_state.puzzle_size
     dimension = PUZZLES[puzzle_size][1]
@@ -82,17 +82,28 @@ def slide(idx):
         st.session_state.started = True
         st.session_state.t0 = time.time()
 
-    blank = board.index(dimension * dimension)
+    original_board = board.copy()
+    blank = original_board.index(dimension * dimension)
     br, bc = divmod(blank, dimension)
     r, c = divmod(idx, dimension)
-    if abs(br - r) + abs(bc - c) != 1:
+    moved_board = move_tile(original_board, idx, dimension)
+    if moved_board is None:
         return
+
+    row_step = (br > r) - (br < r)
+    col_step = (bc > c) - (bc < c)
+    affected = []
+    current_row, current_col = r, c
+    while (current_row, current_col) != (br, bc):
+        current_index = current_row * dimension + current_col
+        affected.append((original_board[current_index], col_step * PITCH, row_step * PITCH))
+        current_row += row_step
+        current_col += col_step
 
     st.session_state.tick += 1
     st.session_state.moves += 1
-    value = board[idx]
-    board[:] = move_tile(board, idx, dimension)
-    st.session_state.anim = (value, (c - bc) * PITCH, (r - br) * PITCH, st.session_state.tick)
+    board[:] = moved_board
+    st.session_state.anim = (affected, st.session_state.tick)
 
     if board == solved_board(dimension):
         st.session_state.won = True
@@ -124,14 +135,15 @@ def render_board():
       [class*="st-key-blank"] button {{ visibility: hidden; }}
     """
     if anim:
-        value, dx, dy, tick = anim
-        css += f"""
-      @keyframes slide{tick} {{
+        affected, tick = anim
+        for value, dx, dy in affected:
+            css += f"""
+      @keyframes slide{tick}x{value} {{
         from {{ transform: translate({dx}px, {dy}px); }}
         to   {{ transform: translate(0, 0); }}
       }}
-      [class*="st-key-t{puzzle_size}x{value}x{tick}"] button {{ animation: slide{tick} {ANIM_MS}ms ease-out; }}
-        """
+      [class*="st-key-t{puzzle_size}x{value}x{tick}"] button {{ animation: slide{tick}x{value} {ANIM_MS}ms ease-out; }}
+            """
     css += "</style>"
     st.markdown(css, unsafe_allow_html=True)
 
@@ -140,7 +152,7 @@ def render_board():
         for idx, value in enumerate(st.session_state.board):
             if value == dimension * dimension:
                 st.button(" ", key=f"blank{puzzle_size}x{idx}", disabled=True)
-            elif anim and value == anim[0]:
+            elif anim and any(moved_value == value for moved_value, _, _ in anim[0]):
                 if st.button(str(value), key=f"t{puzzle_size}x{value}x{tick}", disabled=st.session_state.won):
                     slide(idx)
                     st.rerun()
